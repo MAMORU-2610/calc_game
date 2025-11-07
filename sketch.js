@@ -1,32 +1,51 @@
+/* ====== タブレット対応版（タッチ操作＆誤タップ防止） ======
+  変更点：
+  - touchStarted でタップ入力を処理（mousePressed と共通ハンドラ）
+  - canvas の touch-action を 'none' にしてスクロール／ピンチを抑制
+  - 長押しのコンテキストメニュー無効化
+  - user-select 無効化でテキスト選択を防止
+  - タップ向けに最小タップサイズを強化（ボタン／パネル）
+========================================================= */
+
 /* ====== ゲーム状態 ====== */
-let gameState = 'start'; // 'start' | 'countdown' | 'playing' | 'res
+let gameState = 'start'; // 'start' | 'countdown' | 'playing' | 'result'
 let panels = [];
 let prob = null;
 
 let score = { ok:0, total:0 };
-const durationMs = 2 * 1000; // 1分
+const durationMs = 60 * 1000; // 1分
 let startMs = 0;
 
 let countdown = { start:0, duration:3000 }; // 3,2,1（3秒）
 
 /* ====== デバッグ ====== */
 let debugMode = false;
-const dbgBtn = { x:16, y:14, w:140, h:38 };
+const dbgBtn = { x:16, y:14, w:160, h:44 }; // タブレット向けに少し大きめ
 
 /* ====== ボタン ====== */
-const startBtn = { x:0, y:0, w:260, h:60 };
-const retryBtn = { x:0, y:0, w:220, h:56 };
-const backBtn  = { x:0, y:0, w:220, h:52 };
-const dlBtn    = { x:0, y:0, w:220, h:44 };  // JSONダウンロード（デバッグ専用）
-const clearBtn = { x:0, y:0, w:220, h:44 };  // 履歴削除（デバッグ専用）
+const startBtn = { x:0, y:0, w:320, h:72 };
+const retryBtn = { x:0, y:0, w:280, h:68 };
+const backBtn  = { x:0, y:0, w:280, h:64 };
+const dlBtn    = { x:0, y:0, w:300, h:56 };  // JSONダウンロード（デバッグ専用）
+const clearBtn = { x:0, y:0, w:300, h:56 };  // 履歴削除（デバッグ専用）
 
 /* ====== 履歴（ローカル保存あり） ====== */
 let history = []; // {ts, ok, total, acc}
 let savedThisResult = false;
 
 function setup(){
-  createCanvas(windowWidth, windowHeight);
+  const cnv = createCanvas(windowWidth, windowHeight);
   textFont('sans-serif');
+
+  // --- タブレット操作の品質向上 ---
+  // 画面スクロールやピンチと競合しないように canvas 側で無効化
+  cnv.elt.style.touchAction = 'none';
+  // 長押しメニューを無効化
+  cnv.elt.oncontextmenu = (e) => e.preventDefault();
+  // テキスト選択を抑制（誤タップで選択されないように）
+  document.body.style.userSelect = 'none';
+  document.body.style.webkitUserSelect = 'none';
+
   loadHistory();
   makePanels();
 }
@@ -89,9 +108,9 @@ function draw(){
 function drawStartScreen(){
   const base = min(width, height);
 
-  // スタートボタン
-  startBtn.w = min(280, width * 0.6);
-  startBtn.h = 60;
+  // スタートボタン（タブレット向け最低サイズ確保）
+  startBtn.w = clamp(min(360, width * 0.7), 260, 420);
+  startBtn.h = clamp( Math.max(60, base * 0.08), 60, 88 );
   startBtn.x = (width - startBtn.w)/2;
   startBtn.y = height * 0.55;
 
@@ -108,16 +127,7 @@ function drawStartScreen(){
   pop();
 
   // ボタン
-  push();
-  noStroke(); fill(0,0,0,18);
-  rect(startBtn.x+3, startBtn.y+4, startBtn.w, startBtn.h, 12);
-
-  stroke(0,150); strokeWeight(2); fill(255);
-  rect(startBtn.x, startBtn.y, startBtn.w, startBtn.h, 12);
-
-  noStroke(); fill(30); textAlign(CENTER, CENTER); textSize(20);
-  text('スタート', startBtn.x + startBtn.w/2, startBtn.y + startBtn.h/2);
-  pop();
+  drawButton(startBtn, 'スタート');
 }
 
 function drawCountdownScreen(){
@@ -147,7 +157,7 @@ function drawTimer(label){
   const base = min(width, height);
   push();
   textAlign(RIGHT, TOP);
-  textSize(base * 0.034);
+  textSize(base * 0.036);
   fill(30);
   noStroke();
   text(label, width - 16, 14);
@@ -161,9 +171,9 @@ function drawDebugMeta(){
   textAlign(LEFT, TOP);
   fill(60);
   noStroke();
-  textSize(base * 0.028);
-  text(`スコア：${score.ok} / ${score.total}`, 16, dbgBtn.y + dbgBtn.h + 8);
-  text(`試行回数：${trials}`, 16, dbgBtn.y + dbgBtn.h + 8 + base*0.035);
+  textSize(base * 0.03);
+  text(`スコア：${score.ok} / ${score.total}`, 16, dbgBtn.y + dbgBtn.h + 10);
+  text(`試行回数：${trials}`, 16, dbgBtn.y + dbgBtn.h + 10 + base*0.038);
   pop();
 }
 
@@ -174,31 +184,17 @@ function drawTrialsAtTop(){
   textAlign(LEFT, TOP);
   fill(60);
   noStroke();
-  textSize(base * 0.028);
-  text(`試行回数：${trials}`, 16, dbgBtn.y + dbgBtn.h + 8);
+  textSize(base * 0.03);
+  text(`試行回数：${trials}`, 16, dbgBtn.y + dbgBtn.h + 10);
   pop();
 }
 
 function drawDebugButton(){
-  push();
-  // 影
-  noStroke();
-  fill(0,0,0,18);
-  rect(dbgBtn.x+3, dbgBtn.y+4, dbgBtn.w, dbgBtn.h, 10);
-
-  // 本体
-  stroke( debugMode ? color(0,160,110) : 210 );
-  strokeWeight(2);
-  fill(255);
-  rect(dbgBtn.x, dbgBtn.y, dbgBtn.w, dbgBtn.h, 10);
-
-  // ラベル
-  noStroke();
-  fill( debugMode ? color(0,160,110) : 40 );
-  textAlign(CENTER, CENTER);
-  textSize(16);
-  text(debugMode ? 'DEBUG: ON' : 'DEBUG: OFF', dbgBtn.x + dbgBtn.w/2, dbgBtn.y + dbgBtn.h/2);
-  pop();
+  drawButton(dbgBtn, debugMode ? 'DEBUG: ON' : 'DEBUG: OFF', {
+    stroke: debugMode ? color(0,160,110) : color(210),
+    textFill: debugMode ? color(0,160,110) : color(40),
+    radius: 12
+  });
 }
 
 function drawResultScreen(){
@@ -222,7 +218,7 @@ function drawResultScreen(){
 
   // これまでの結果（デバッグモードのときのみ表示）＋ DL/削除ボタン
   let yTop = height * 0.44;
-  const lineH = max(24, base * 0.035);
+  const lineH = max(28, base * 0.038);
 
   if(debugMode){
     const list = history.slice(-10).reverse();
@@ -231,46 +227,29 @@ function drawResultScreen(){
     push();
     textAlign(LEFT, TOP);
     fill(30);
-    textSize(base * 0.04);
+    textSize(base * 0.045);
     text('これまでの結果', 16, yTop - lineH*0.9);
     pop();
 
-    // ダウンロード／削除ボタン（右上）
-    dlBtn.w = min(260, width * 0.45);
-    dlBtn.h = 44;
+    // ダウンロード／削除ボタン（右側）
+    dlBtn.w = clamp(width * 0.46, 240, 360);
+    dlBtn.h = clamp(base * 0.07, 48, 64);
     dlBtn.x = width - dlBtn.w - 16;
     dlBtn.y = yTop - lineH*0.9 - 6;
 
     clearBtn.w = dlBtn.w;
-    clearBtn.h = 44;
+    clearBtn.h = dlBtn.h;
     clearBtn.x = dlBtn.x;
-    clearBtn.y = dlBtn.y + dlBtn.h + 8;
+    clearBtn.y = dlBtn.y + dlBtn.h + 12;
 
-    // DL
-    push();
-    noStroke(); fill(0,0,0,18);
-    rect(dlBtn.x+3, dlBtn.y+4, dlBtn.w, dlBtn.h, 10);
-    stroke(0,150); strokeWeight(2); fill(255);
-    rect(dlBtn.x, dlBtn.y, dlBtn.w, dlBtn.h, 10);
-    noStroke(); fill(30); textAlign(CENTER, CENTER); textSize(16);
-    text('履歴をJSONでダウンロード', dlBtn.x + dlBtn.w/2, dlBtn.y + dlBtn.h/2);
-    pop();
-
-    // クリア
-    push();
-    noStroke(); fill(0,0,0,18);
-    rect(clearBtn.x+3, clearBtn.y+4, clearBtn.w, clearBtn.h, 10);
-    stroke(200,60,60); strokeWeight(2); fill(255);
-    rect(clearBtn.x, clearBtn.y, clearBtn.w, clearBtn.h, 10);
-    noStroke(); fill(200,60,60); textAlign(CENTER, CENTER); textSize(16);
-    text('履歴を削除', clearBtn.x + clearBtn.w/2, clearBtn.y + clearBtn.h/2);
-    pop();
+    drawButton(dlBtn, '履歴をJSONでダウンロード');
+    drawButton(clearBtn, '履歴を削除', { stroke: color(200,60,60), textFill: color(200,60,60) });
 
     // 履歴リスト
     push();
     textAlign(LEFT, TOP);
     fill(30);
-    textSize(base * 0.028);
+    textSize(base * 0.032);
     let y = yTop;
     for(const item of list){
       const d = new Date(item.ts);
@@ -284,37 +263,39 @@ function drawResultScreen(){
   }
 
   // もう一度ボタン
-  retryBtn.w = min(260, width * 0.5);
-  retryBtn.h = 56;
+  retryBtn.w = clamp(width * 0.6, 240, 420);
+  retryBtn.h = clamp(base * 0.085, 56, 88);
   retryBtn.x = (width - retryBtn.w)/2;
   retryBtn.y = height*0.76;
-
-  push();
-  noStroke(); fill(0,0,0,20);
-  rect(retryBtn.x+3, retryBtn.y+4, retryBtn.w, retryBtn.h, 12);
-
-  stroke(0,150); strokeWeight(2); fill(255);
-  rect(retryBtn.x, retryBtn.y, retryBtn.w, retryBtn.h, 12);
-
-  noStroke(); fill(30); textAlign(CENTER, CENTER); textSize(20);
-  text('もう一度', retryBtn.x + retryBtn.w/2, retryBtn.y + retryBtn.h/2);
-  pop();
+  drawButton(retryBtn, 'もう一度');
 
   // スタート画面に戻るボタン
-  backBtn.w = min(260, width * 0.5);
-  backBtn.h = 52;
+  backBtn.w = retryBtn.w;
+  backBtn.h = clamp(base * 0.08, 52, 84);
   backBtn.x = (width - backBtn.w)/2;
-  backBtn.y = retryBtn.y + retryBtn.h + 14;
+  backBtn.y = retryBtn.y + retryBtn.h + 16;
+  drawButton(backBtn, 'スタート画面へ', { stroke: color(120) });
+}
+
+/* ====== 共通ボタン描画 ====== */
+function drawButton(btn, label, opt = {}){
+  const radius = opt.radius ?? 14;
+  const strokeCol = opt.stroke ?? color(0,150);
+  const textFill = opt.textFill ?? color(30);
 
   push();
-  noStroke(); fill(0,0,0,18);
-  rect(backBtn.x+3, backBtn.y+4, backBtn.w, backBtn.h, 12);
+  // 影
+  noStroke(); fill(0,0,0,20);
+  rect(btn.x+3, btn.y+4, btn.w, btn.h, radius);
 
-  stroke(120); strokeWeight(2); fill(255);
-  rect(backBtn.x, backBtn.y, backBtn.w, backBtn.h, 12);
+  // 本体
+  stroke(strokeCol); strokeWeight(2); fill(255);
+  rect(btn.x, btn.y, btn.w, btn.h, radius);
 
-  noStroke(); fill(30); textAlign(CENTER, CENTER); textSize(18);
-  text('スタート画面へ', backBtn.x + backBtn.w/2, backBtn.y + backBtn.h/2);
+  // ラベル
+  noStroke(); fill(textFill); textAlign(CENTER, CENTER);
+  textSize(clamp(min(width,height) * 0.03, 16, 24));
+  text(label, btn.x + btn.w/2, btn.y + btn.h/2);
   pop();
 }
 
@@ -324,11 +305,12 @@ function makePanels(){
   const cols = 5, rows = 2;
   const marginX = width * 0.05;
   const gridW = width * 0.90;
-  const gap = max(6, gridW * 0.015);
+  const gap = max(10, gridW * 0.02);
   const cellW = (gridW - gap * (cols - 1)) / cols;
 
   const base = min(width, height);
-  const cellH = min(base * 0.12, cellW * 0.75);
+  // タブレットでの最小タップ面積を確保（約48dp相当以上）
+  const cellH = clamp(min(base * 0.14, cellW * 0.8), 64, 120);
   const topY = height * 0.60;
 
   let n = 1;
@@ -344,7 +326,7 @@ function makePanels(){
 function drawPanels(){
   const base = min(width, height);
   textAlign(CENTER, CENTER);
-  textSize(base * 0.06);
+  textSize(clamp(base * 0.065, 22, 46));
 
   for(const p of panels){
     const isHover = mouseX >= p.x && mouseX <= p.x+p.w && mouseY >= p.y && mouseY <= p.y+p.h;
@@ -365,16 +347,30 @@ function drawPanels(){
   }
 }
 
-/* ====== 入力 ====== */
+/* ====== 入力（マウス／タッチ共通） ====== */
 function mousePressed(){
+  handlePointerDown(mouseX, mouseY);
+}
+
+function touchStarted(){
+  // 最初のタッチのみを見る
+  if(touches && touches.length > 0){
+    const t = touches[0];
+    handlePointerDown(t.x, t.y);
+  }
+  // ブラウザ既定のスクロール等を抑制
+  return false;
+}
+
+function handlePointerDown(mx, my){
   // デバッグボタン（常時）
-  if(hit(mouseX, mouseY, dbgBtn)){
+  if(hit(mx, my, dbgBtn)){
     debugMode = !debugMode;
     return;
   }
 
   if(gameState === 'start'){
-    if(hit(mouseX, mouseY, startBtn)){
+    if(hit(mx, my, startBtn)){
       startNewRound();
     }
     return;
@@ -385,21 +381,21 @@ function mousePressed(){
   }
 
   if(gameState === 'result'){
-    if(hit(mouseX, mouseY, retryBtn)){
+    if(hit(mx, my, retryBtn)){
       startNewRound();
       return;
     }
-    if(hit(mouseX, mouseY, backBtn)){
+    if(hit(mx, my, backBtn)){
       gameState = 'start';
       return;
     }
     // デバッグ専用の操作
     if(debugMode){
-      if(hit(mouseX, mouseY, dlBtn)){
+      if(hit(mx, my, dlBtn)){
         downloadHistoryJSON();
         return;
       }
-      if(hit(mouseX, mouseY, clearBtn)){
+      if(hit(mx, my, clearBtn)){
         clearHistoryWithConfirm();
         return;
       }
@@ -411,7 +407,7 @@ function mousePressed(){
 
   // 回答
   for(const p of panels){
-    if(hit(mouseX, mouseY, p)){
+    if(hit(mx, my, p)){
       checkAnswer(p.value);
       break;
     }
@@ -527,7 +523,6 @@ function fmtDate(d){
 
 /* ====== デバッグ専用：JSONダウンロード／履歴削除 ====== */
 function downloadHistoryJSON(){
-  // デバッグモードのみ機能
   if(!debugMode) return;
 
   const payload = {
@@ -542,6 +537,8 @@ function downloadHistoryJSON(){
   const a = document.createElement('a');
   a.href = url;
   a.download = fileName;
+
+  // iOS Safari 対応：リンクを DOM に追加してからクリック
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -549,9 +546,7 @@ function downloadHistoryJSON(){
 }
 
 function clearHistoryWithConfirm(){
-  // デバッグモードのみ機能
   if(!debugMode) return;
-
   if(confirm('履歴をすべて削除しますか？')){
     history = [];
     saveHistory();
@@ -569,3 +564,6 @@ function makeExportFileName(){
   const ss = z(d.getSeconds());
   return `arithmetic_history_${yyyy}${mm}${dd}_${hh}${mi}${ss}.json`;
 }
+
+/* ====== ユーティリティ ====== */
+function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
