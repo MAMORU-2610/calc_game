@@ -13,7 +13,7 @@ let panels = [];
 let prob = null;
 
 let score = { ok:0, total:0 };
-const durationMs = 2 * 1000; // 1分
+const durationMs = 60* 1000; // 1分
 let startMs = 0;
 
 let countdown = { start:0, duration:3000 }; // 3,2,1（3秒）
